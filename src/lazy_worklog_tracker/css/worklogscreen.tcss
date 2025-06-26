@@ -1,0 +1,33 @@
+#months {
+}
+#dates {
+}
+#tasks {
+}
+
+DataTable {
+    height: 1fr;
+    border: tall $primary;
+}
+
+SelectionList {
+    border: tall $primary;
+    height: 99%;
+}
+
+Container.tasks-container {
+    height: 3fr;
+    
+}
+Container.months-container {
+    height: 0.5fr;
+}
+
+Container.dates-container {
+    height: 1fr;
+}
+
+#left-bar {
+    width: 30%;
+}
+

@@ -1,0 +1,35 @@
+Screen {
+    align: center middle;
+    background: rgba(0,0,0,0);
+}
+
+#new-worklog-pop-up {
+    width: 30%;
+    height: auto;
+    align-vertical: middle;
+    border: tall $primary;
+    margin: 5
+}
+
+.input-field {
+    width: 1fr;
+    content-align-horizontal: right
+}
+
+.input-desc {
+    width: auto;
+    margin: 1;
+}
+
+#new-worklog-title {
+    align: center middle;
+    border: $primary
+}
+
+#for-label {
+  width: 1fr;
+  height: auto;
+  align: center middle;
+  border:$primary
+}
+
