@@ -44,10 +44,17 @@ class NewWorklogScreen(Screen):
     CSS_PATH = "css/new-worklog-screen.tcss"
     BINDINGS = [Binding("escape", "close_screen", "close_screen")]
 
-    def __init__(self, date="", task="", duration=""):
+    def __init__(
+        self,
+        date: str = "",
+        task: str = "",
+        duration: str = "",
+        worklog_id: int | None = None,
+    ):
         self.date_value = date
         self.task_value = task
         self.duration_value = duration
+        self.worklog_id = worklog_id
         super().__init__()
 
     @on(Input.Submitted)
@@ -59,7 +66,7 @@ class NewWorklogScreen(Screen):
             if len(date) == 0 or len(task_name) == 0 or len(duration) == 0:
                 self.focus_next()
             else:
-                self.dismiss(NewWorklogDto(date, task_name, duration))
+                self.dismiss(WorklogDto(self.worklog_id, date, task_name, duration))
         else:
             self.focus_next()
 
@@ -100,8 +107,9 @@ class NewWorklogScreen(Screen):
         yield Footer()
 
 
-class NewWorklogDto:
-    def __init__(self, date, task, duration):
+class WorklogDto:
+    def __init__(self, id: int | None, date: str, task: str, duration: str):
+        self.id = id
         self.date = date
         self.task = task
         self.duration = duration
@@ -118,6 +126,7 @@ class WorklogScreen(Screen):
         ("n", "create_new_worklog_screen", "[N]ew worklog"),
         ("c", "choose_current", "Choose [C]current"),
         ("a", "choose_all", "Choose [A]ll"),
+        ("d", "delete_worklog", "[D]elete worklog"),
         # debug
         ("t", "update_worklogs", "update_worlogs"),
         ("y", "update_tasks", "update_tasks"),
@@ -155,7 +164,7 @@ class WorklogScreen(Screen):
             with Container(classes="worklog-container"):
                 self._worklogs = DataTable(id=WORKLOG_VIEW)
                 self._worklogs.border_title = "[press 4] Worklogs"
-                self._worklogs.show_header = False
+                # self._worklogs.show_header = False
                 self._worklogs.cursor_type = "row"
                 self._worklogs.add_columns(*["date", "task", "duration"])
                 yield self._worklogs
@@ -201,14 +210,15 @@ class WorklogScreen(Screen):
     async def action_update_worklogs(self):
         dates: SelectionList = self._dates
         tasks: SelectionList = self._tasks
-        worklogs: DataTable = self.query_one(f"#{WORKLOG_VIEW}", DataTable)
+        worklogs: DataTable = self._worklogs
         worklogs.clear(False)
 
-        lisic = [
-            (worklog.date, worklog.task, worklog.duration)
+        worklogs_by_id = {
+            worklog.id: (worklog.date, worklog.task, worklog.duration)
             for worklog in self.get_worklogs_from_db(dates.selected, tasks.selected)
-        ]
-        worklogs.add_rows(lisic)
+        }
+        for id, row in worklogs_by_id.items():
+            worklogs.add_row(*row, key=id)
 
     @work(exclusive=True)
     @on(UpdateTasks)
@@ -243,7 +253,7 @@ class WorklogScreen(Screen):
         self.post_message(self.UpdateTasks())
 
     def action_create_new_worklog_screen(self) -> None:
-        def new_worklog_result(result: NewWorklogDto | None) -> None:
+        def new_worklog_result(result: WorklogDto | None) -> None:
             if result:
                 data = [(result.date, result.task, result.duration)]
                 cursor.execute(
@@ -258,9 +268,23 @@ class WorklogScreen(Screen):
 
     @on(DataTable.RowSelected)
     def action_create_update_worklog_screen(self):
-        row = self._worklogs.cursor_row
-        row_data = self._worklogs.get_row_at(row)
-        self.app.push_screen(NewWorklogScreen(row_data[0], row_data[1], row_data[2]))
+        def update_worklog(result: WorklogDto | None) -> None:
+            if result:
+                data = [(result.date, result.task, result.duration, result.id)]
+                cursor.execute(
+                    "update Worklogs set date = ?, task_name = ?, duration = ? where id = ?",
+                    *data,
+                )
+
+        table = self._worklogs
+        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+        row_data = self._worklogs.get_row(row_key)
+        self.app.push_screen(
+            NewWorklogScreen(
+                row_data[0], row_data[1], row_data[2], worklog_id=int(row_key.value)
+            ),
+            update_worklog,
+        )
         pass
 
     def action_choose_current(self) -> None:
@@ -287,14 +311,14 @@ class WorklogScreen(Screen):
 
     def get_worklogs_from_db(
         self, dates: List[str], tasks: List[str]
-    ) -> List[NewWorklogDto]:
+    ) -> List[WorklogDto]:
         list_as_string = ",".join("'" + x + "'" for x in dates)
         tasks_as_string = ",".join("'" + x + "'" for x in tasks)
         cursor.execute(
-            f"SELECT w.date, w.task_name, w.duration FROM Worklogs w WHERE w.date in ({list_as_string}) and w.task_name in ({tasks_as_string}) order by w.date, w.task_name"
+            f"SELECT w.id, w.date, w.task_name, w.duration FROM Worklogs w WHERE w.date in ({list_as_string}) and w.task_name in ({tasks_as_string}) order by w.date, w.task_name"
         )
         all_data = cursor.fetchall()
-        return [NewWorklogDto(x[0], x[1], x[2]) for x in all_data]
+        return [WorklogDto(x[0], x[1], x[2], x[3]) for x in all_data]
 
     def get_years_from_db(self) -> List[str]:
         cursor.execute("SELECT distinct strftime('%Y',w.date) FROM Worklogs w")
@@ -345,6 +369,13 @@ class WorklogScreen(Screen):
         index: int = selection_list.highlighted
         selection_list.deselect_all()
         selection_list.select(selection_list.get_option_at_index(index))
+
+    def action_delete_worklog(self):
+        if self.focused.id == self._worklogs.id:
+            table = self._worklogs
+            row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
+            cursor.execute(f"DELETE FROM Worklogs WHERE id = {row_key.value}")
+            table.remove_row(row_key)
 
 
 def validate_date(date_text):
