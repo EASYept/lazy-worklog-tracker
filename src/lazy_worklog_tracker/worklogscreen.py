@@ -128,10 +128,10 @@ class WorklogScreen(Screen):
         ("a", "choose_all", "Choose [A]ll"),
         ("d", "delete_worklog", "[D]elete worklog"),
         # debug
-        ("t", "update_worklogs", "update_worlogs"),
-        ("y", "update_tasks", "update_tasks"),
-        ("u", "update_dates", "update_dates"),
-        ("i", "update_months", "update_months"),
+        # ("t", "update_worklogs", "update_worlogs"),
+        # ("y", "update_tasks", "update_tasks"),
+        # ("u", "update_dates", "update_dates"),
+        # ("i", "update_months", "update_months"),
     ]
 
     class UpdateMonths(Message):
