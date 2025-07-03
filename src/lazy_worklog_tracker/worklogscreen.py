@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from abc import abstractmethod
 import sqlite3
 from datetime import datetime
-from typing import List
+from typing import Iterable, List, TypeVar
 
 from textual import containers, on, work
 from textual.app import ComposeResult
@@ -21,23 +22,136 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
-sql = sqlite3.connect("db.db", autocommit=True)
-cursor = sql.cursor()
-cursor.execute("""CREATE TABLE IF NOT EXISTS Worklogs (
-    id INTEGER PRIMARY KEY,
-    date TEXT NOT NULL,
-    task_name TEXT NOT NULL,
-    duration TEXT NOT NULL
-    )""")
-
 MONTHS_VIEW = "months"
 DATES_VIEW = "dates"
 TASK_VIEW = "tasks"
 WORKLOG_VIEW = "worklogs"
 
 
-class GeneralError(Exception):
-    """Base class for all errors."""
+Year = TypeVar("Year")
+Month = TypeVar("Month")
+Date = TypeVar("Date")
+Task = TypeVar("Task")
+Worklog = TypeVar("Worklog")
+
+
+class WorklogEntity:
+    def __init__(self, id: int | None, date: str, task: str, duration: str):
+        self.id = id
+        self.date = date
+        self.task = task
+        self.duration = duration
+
+
+class WorklogsRepository:
+    "interface for plugin storage"
+
+    @abstractmethod
+    def get_years(self) -> Iterable[str]:
+        return []
+
+    @abstractmethod
+    def get_months(self, years: Iterable[str]) -> Iterable[str]:
+        return []
+
+    @abstractmethod
+    def get_dates(
+        self, years: Iterable[str], months: Iterable[str] | None
+    ) -> Iterable[str]:
+        return []
+
+    @abstractmethod
+    def get_tasks(self, dates: Iterable[str]) -> Iterable[str]:
+        return []
+
+    @abstractmethod
+    def get_worklogs(
+        self, dates: Iterable[str], tasks: Iterable[str]
+    ) -> Iterable[WorklogEntity]:
+        return []
+
+    def save(self, entity: WorklogEntity) -> int:
+        return 0
+
+    def update(self, entity: WorklogEntity) -> int:
+        return 0
+
+    def delete(self, id: int) -> int:
+        return 0
+
+
+class SqliteWorklogsRepository(WorklogsRepository):
+    def __init__(self) -> None:
+        self.sql = sqlite3.connect("db.db", autocommit=True)
+        self.cursor = self.sql.cursor()
+        self.cursor.execute("""CREATE TABLE IF NOT EXISTS Worklogs (
+            id INTEGER PRIMARY KEY,
+            date TEXT NOT NULL,
+            task_name TEXT NOT NULL,
+            duration TEXT NOT NULL)""")
+        super().__init__()
+
+    def get_years(self) -> Iterable[str]:
+        self.cursor.execute("SELECT distinct strftime('%Y',w.date) FROM Worklogs w")
+        return [x[0] for x in self.cursor.fetchall()]
+
+    def get_months(self, years: Iterable[str]) -> Iterable[str]:
+        list_as_string = ",".join("'" + x + "'" for x in years)
+        self.cursor.execute(
+            f"SELECT DISTINCT strftime('%m',w.date) FROM Worklogs w WHERE strftime('%Y', w.date) in ({list_as_string}) order by strftime('%m',w.date)"
+        )
+        return [x[0] for x in self.cursor.fetchall()]
+
+    def get_dates(
+        self, years: Iterable[str], months: Iterable[str] | None
+    ) -> Iterable[str]:
+        years_as_string = ",".join("'" + x + "'" for x in years)
+        months_as_string = ",".join("'" + x + "'" for x in months)
+        self.cursor.execute(
+            f"SELECT DISTINCT w.date FROM Worklogs w WHERE strftime('%Y', w.date) in ({years_as_string}) and strftime('%m', w.date) in ({months_as_string}) order by w.date"
+        )
+        return [x[0] for x in self.cursor.fetchall()]
+
+    def get_tasks(self, dates: Iterable[str]) -> Iterable[str]:
+        dates_as_string = ",".join("'" + x + "'" for x in dates)
+        self.cursor.execute(
+            f"SELECT DISTINCT w.task_name FROM Worklogs w WHERE date in ({dates_as_string})"
+        )
+        return [x[0] for x in self.cursor.fetchall()]
+
+    def get_worklogs(
+        self, dates: Iterable[str], tasks: Iterable[str]
+    ) -> Iterable[WorklogEntity]:
+        list_as_string = ",".join("'" + x + "'" for x in dates)
+        tasks_as_string = ",".join("'" + x + "'" for x in tasks)
+        self.cursor.execute(
+            f"""select w.id, w.date, w.task_name, w.duration 
+            from Worklogs w 
+            where w.date in ({list_as_string}) and w.task_name in ({tasks_as_string}) 
+            order by w.date, w.task_name
+            """
+        )
+        return [WorklogEntity(x[0], x[1], x[2], x[3]) for x in self.cursor.fetchall()]
+
+    def save(self, entity: WorklogEntity) -> int:
+        data = [(entity.date, entity.task, entity.duration)]
+        self.cursor.execute(
+            "INSERT INTO Worklogs(date, task_name, duration) VALUES (?, ?, ?)",
+            *data,
+        )
+        return 0
+
+    def update(self, entity: WorklogEntity) -> int:
+        data = [(entity.date, entity.task, entity.duration, entity.id)]
+        self.cursor.execute(
+            "update Worklogs set date = ?, task_name = ?, duration = ? where id = ?",
+            *data,
+        )
+        return 0
+
+    def delete(self, id: int) -> int:
+        self.cursor.execute(f"DELETE FROM Worklogs WHERE id = {id}")
+        return id
 
 
 class NewWorklogScreen(Screen):
@@ -134,6 +248,16 @@ class WorklogScreen(Screen):
         # ("i", "update_months", "update_months"),
     ]
 
+    def __init__(
+        self,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+        repository: WorklogsRepository = SqliteWorklogsRepository(),
+    ) -> None:
+        self._repository = repository
+        super().__init__(name, id, classes)
+
     class UpdateMonths(Message):
         """event"""
 
@@ -191,8 +315,8 @@ class WorklogScreen(Screen):
     @work(exclusive=True)
     @on(UpdateMonths)
     async def action_update_months(self) -> None:
-        years_list = self.get_years_from_db()
-        months_list = self.get_months_from_db(years_list)
+        years_list = self._repository.get_years()
+        months_list = self._repository.get_months(years_list)
 
         self._months.clear_options()
         self._months.add_options(
@@ -215,7 +339,7 @@ class WorklogScreen(Screen):
 
         worklogs_by_id = {
             worklog.id: (worklog.date, worklog.task, worklog.duration)
-            for worklog in self.get_worklogs_from_db(dates.selected, tasks.selected)
+            for worklog in self._repository.get_worklogs(dates.selected, tasks.selected)
         }
         for id, row in worklogs_by_id.items():
             worklogs.add_row(*row, key=id)
@@ -223,9 +347,8 @@ class WorklogScreen(Screen):
     @work(exclusive=True)
     @on(UpdateTasks)
     async def action_update_tasks(self):
-        new_tasks = self.get_tasks_from_db(self._dates.selected)
-        self._tasks.clear_options()
-        self._tasks.add_options(
+        new_tasks = self._repository.get_tasks(self._dates.selected)
+        self._tasks.clear_options().add_options(
             [
                 Selection(task, task, True, id=task)
                 for task in new_tasks
@@ -238,11 +361,10 @@ class WorklogScreen(Screen):
     @work(exclusive=True)
     @on(UpdateDates)
     async def action_update_dates(self) -> None:
-        new_dates = self.get_dates_from_db(
-            self.get_years_from_db(), self._months.selected
+        new_dates = self._repository.get_dates(
+            self._repository.get_years(), self._months.selected
         )
-        self._dates.clear_options()
-        self._dates.add_options(
+        self._dates.clear_options().add_options(
             [
                 Selection(date, date, True, id=date)
                 for date in new_dates
@@ -255,37 +377,34 @@ class WorklogScreen(Screen):
     def action_create_new_worklog_screen(self) -> None:
         def new_worklog_result(result: WorklogDto | None) -> None:
             if result:
-                data = [(result.date, result.task, result.duration)]
-                cursor.execute(
-                    "INSERT INTO Worklogs(date, task_name, duration) VALUES (?, ?, ?)",
-                    *data,
+                self._repository.save(
+                    WorklogEntity(None, result.date, result.task, result.duration)
                 )
                 self.post_message(self.UpdateMonths())
-            else:
-                return
 
         self.app.push_screen(NewWorklogScreen(), new_worklog_result)
 
-    @on(DataTable.RowSelected)
-    def action_create_update_worklog_screen(self):
+    @on(DataTable.RowSelected, selector=f"#{WORKLOG_VIEW}")
+    def action_create_update_worklog_screen(self, message: DataTable.RowSelected):
+        if message.row_key.value is None:
+            return
+
         def update_worklog(result: WorklogDto | None) -> None:
             if result:
-                data = [(result.date, result.task, result.duration, result.id)]
-                cursor.execute(
-                    "update Worklogs set date = ?, task_name = ?, duration = ? where id = ?",
-                    *data,
+                self._repository.update(
+                    WorklogEntity(result.id, result.date, result.task, result.duration)
                 )
 
-        table = self._worklogs
-        row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-        row_data = self._worklogs.get_row(row_key)
+        row_data = self._worklogs.get_row(message.row_key)
         self.app.push_screen(
             NewWorklogScreen(
-                row_data[0], row_data[1], row_data[2], worklog_id=int(row_key.value)
+                row_data[0],
+                row_data[1],
+                row_data[2],
+                worklog_id=int(message.row_key.value),
             ),
             update_worklog,
         )
-        pass
 
     def action_choose_current(self) -> None:
         if self.focused.id == self._tasks.id:
@@ -308,43 +427,6 @@ class WorklogScreen(Screen):
         elif self.focused.id == self._months.id:
             self._months.select_all()
             self.post_message(self.UpdateDates())
-
-    def get_worklogs_from_db(
-        self, dates: List[str], tasks: List[str]
-    ) -> List[WorklogDto]:
-        list_as_string = ",".join("'" + x + "'" for x in dates)
-        tasks_as_string = ",".join("'" + x + "'" for x in tasks)
-        cursor.execute(
-            f"SELECT w.id, w.date, w.task_name, w.duration FROM Worklogs w WHERE w.date in ({list_as_string}) and w.task_name in ({tasks_as_string}) order by w.date, w.task_name"
-        )
-        all_data = cursor.fetchall()
-        return [WorklogDto(x[0], x[1], x[2], x[3]) for x in all_data]
-
-    def get_years_from_db(self) -> List[str]:
-        cursor.execute("SELECT distinct strftime('%Y',w.date) FROM Worklogs w")
-        return [x[0] for x in cursor.fetchall()]
-
-    def get_months_from_db(self, years: List[str]) -> List[str]:
-        list_as_string = ",".join("'" + x + "'" for x in years)
-        cursor.execute(
-            f"SELECT DISTINCT strftime('%m',w.date) FROM Worklogs w WHERE strftime('%Y', w.date) in ({list_as_string}) order by strftime('%m',w.date)"
-        )
-        return [x[0] for x in cursor.fetchall()]
-
-    def get_dates_from_db(self, years: List[str], months: List[str]) -> List[str]:
-        years_as_string = ",".join("'" + x + "'" for x in years)
-        months_as_string = ",".join("'" + x + "'" for x in months)
-        cursor.execute(
-            f"SELECT DISTINCT w.date FROM Worklogs w WHERE strftime('%Y', w.date) in ({years_as_string}) and strftime('%m', w.date) in ({months_as_string}) order by w.date"
-        )
-        return [x[0] for x in cursor.fetchall()]
-
-    def get_tasks_from_db(self, dates: List[str]):
-        dates_as_string = ",".join("'" + x + "'" for x in dates)
-        cursor.execute(
-            f"SELECT DISTINCT w.task_name FROM Worklogs w WHERE date in ({dates_as_string})"
-        )
-        return [x[0] for x in cursor.fetchall()]
 
     def on_mount(self) -> None:
         self.action_refresh()
@@ -374,7 +456,7 @@ class WorklogScreen(Screen):
         if self.focused.id == self._worklogs.id:
             table = self._worklogs
             row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-            cursor.execute(f"DELETE FROM Worklogs WHERE id = {row_key.value}")
+            self._repository.delete(int(row_key.value))
             table.remove_row(row_key)
 
 
