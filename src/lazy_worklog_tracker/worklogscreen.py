@@ -394,6 +394,7 @@ class WorklogScreen(Screen):
                 self._repository.update(
                     WorklogEntity(result.id, result.date, result.task, result.duration)
                 )
+                self.post_message(self.UpdateWorklogs())
 
         row_data = self._worklogs.get_row(message.row_key)
         self.app.push_screen(
