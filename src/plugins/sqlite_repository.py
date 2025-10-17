@@ -31,7 +31,10 @@ class SqliteWorklogsRepository(WorklogsRepository):
         self, years: Iterable[str], months: Iterable[str] | None
     ) -> Iterable[str]:
         years_as_string = ",".join("'" + x + "'" for x in years)
-        months_as_string = ",".join("'" + x + "'" for x in months)
+        if months is not None:
+            months_as_string = ",".join("'" + x + "'" for x in months)
+        else:
+            months_as_string = []
         self.cursor.execute(
             f"SELECT DISTINCT w.date FROM Worklogs w WHERE strftime('%Y', w.date) in ({years_as_string}) and strftime('%m', w.date) in ({months_as_string}) order by w.date"
         )

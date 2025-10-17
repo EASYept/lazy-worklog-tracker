@@ -50,10 +50,3 @@ def load_plugins(plugins_dir):
             sys.path.remove(plugins_dir)
 
     return plugins
-
-
-# Example usage
-# if __name__ == "__main__":
-#    plugins = load_plugins("/plugins")
-#    for name, cls in plugins:
-#        print(f"Found class '{name}': {cls}")

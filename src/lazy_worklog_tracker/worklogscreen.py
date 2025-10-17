@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable, List, TypeVar
+from typing import TypeVar
 
 from textual import containers, on, work
 from textual.app import ComposeResult
@@ -222,7 +222,8 @@ class WorklogScreen(Screen):
             for worklog in self._repository.get_worklogs(dates.selected, tasks.selected)
         }
         for id, row in worklogs_by_id.items():
-            worklogs.add_row(*row, key=id)
+            if id is not None:
+                worklogs.add_row(*row, key=str(id))
 
     @work(exclusive=True)
     @on(UpdateTasks)
@@ -288,6 +289,8 @@ class WorklogScreen(Screen):
         )
 
     def action_choose_current(self) -> None:
+        if self.focused is None:
+            return
         if self.focused.id == self._tasks.id:
             self.choose_current(self._tasks)
             self.post_message(self.UpdateWorklogs())
@@ -299,6 +302,8 @@ class WorklogScreen(Screen):
             self.post_message(self.UpdateDates())
 
     def action_choose_all(self) -> None:
+        if self.focused is None:
+            return
         if self.focused.id == self._tasks.id:
             self._tasks.select_all()
             self.post_message(self.UpdateWorklogs())
@@ -334,11 +339,14 @@ class WorklogScreen(Screen):
         selection_list.select(selection_list.get_option_at_index(index))
 
     def action_delete_worklog(self):
+        if self.focused is None:
+            return
         if self.focused.id == self._worklogs.id:
             table = self._worklogs
             row_key, _ = table.coordinate_to_cell_key(table.cursor_coordinate)
-            self._repository.delete(int(row_key.value))
-            table.remove_row(row_key)
+            if row_key.value is not None:
+                self._repository.delete(int(row_key.value))
+                table.remove_row(row_key)
 
 
 def validate_date(date_text):
