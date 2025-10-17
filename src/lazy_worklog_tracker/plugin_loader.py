@@ -1,9 +1,10 @@
 import os
 import importlib
 import sys
+from typing import List, Tuple
 
 
-def load_plugins(plugins_dir):
+def load_plugins(plugins_dir: str) -> List[Tuple[str, type]]:
     """
     Dynamically loads all Python modules in the specified directory and collects all classes from them.
 
@@ -13,11 +14,15 @@ def load_plugins(plugins_dir):
     Returns:
         list: A list of tuples containing the class name and the class itself.
     """
+    plugins_dir = os.path.abspath(plugins_dir)
+    print(plugins_dir)
+
     if not os.path.exists(plugins_dir):
         print(f"Error: Plugins directory '{plugins_dir}' does not exist.")
         return []
 
     # Add the plugins directory to the Python path
+
     sys.path.append(plugins_dir)
 
     plugins = []
@@ -50,10 +55,3 @@ def load_plugins(plugins_dir):
             sys.path.remove(plugins_dir)
 
     return plugins
-
-
-# Example usage
-# if __name__ == "__main__":
-#    plugins = load_plugins("/plugins")
-#    for name, cls in plugins:
-#        print(f"Found class '{name}': {cls}")

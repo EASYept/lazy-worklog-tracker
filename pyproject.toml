@@ -6,8 +6,10 @@ authors = [
     {name = "EASYept",email = "bybl1k@yandex.ru"}
 ]
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<4.0"
 dependencies = [
+    "dependency-injector (>=4.48.2,<5.0.0)",
+    "textual (>=6.5.0,<7.0.0)"
 ]
 
 [tool.poetry]
