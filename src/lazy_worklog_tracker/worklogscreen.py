@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TypeVar
+from typing import List, TypeVar
 
 from textual import containers, on, work
 from textual.app import ComposeResult
@@ -20,7 +20,7 @@ from textual.widgets import (
 )
 from textual.widgets.selection_list import Selection
 
-from abstract.interfaces import WorklogEntity, WorklogsRepository
+from abstract.interfaces import Plugin, WorklogEntity, WorklogsRepository
 
 MONTHS_VIEW = "months"
 DATES_VIEW = "dates"
@@ -110,6 +110,26 @@ class WorklogDto:
         self.duration = duration
 
 
+class WorklogSaved(Message):
+    """event"""
+
+
+class UpdateMonths(Message):
+    """event"""
+
+
+class UpdateDates(Message):
+    """event"""
+
+
+class UpdateTasks(Message):
+    """event"""
+
+
+class UpdateWorklogs(Message):
+    """event"""
+
+
 class WorklogScreen(Screen):
     CSS_PATH = "css/worklogscreen.tcss"
     BINDINGS = [
@@ -132,24 +152,25 @@ class WorklogScreen(Screen):
     def __init__(
         self,
         repository: WorklogsRepository,
+        plugins: List[Plugin],
         name: str | None = None,
         id: str | None = None,
         classes: str | None = None,
     ) -> None:
-        self._repository = repository
+        self._repository: WorklogsRepository = repository
+        self._plugins: List[Plugin] = plugins
         super().__init__(name, id, classes)
 
-    class UpdateMonths(Message):
-        """event"""
+    @property
+    def value(self):
+        """The 'value' property."""
+        return self._plugins
 
-    class UpdateDates(Message):
-        """event"""
-
-    class UpdateTasks(Message):
-        """event"""
-
-    class UpdateWorklogs(Message):
-        """event"""
+    @value.setter
+    def value(self, new_value):
+        if not isinstance(new_value, (int, float)):
+            raise ValueError("Value must be a number.")
+        self._value = new_value
 
     def compose(self) -> ComposeResult:
         with containers.HorizontalGroup():
@@ -184,7 +205,7 @@ class WorklogScreen(Screen):
         self._dates.clear_options()
         self._tasks.clear_options()
         self._worklogs.clear(False)
-        self.post_message(self.UpdateMonths())
+        self.post_message(UpdateMonths())
 
     def if_options_empty(self, selection_list: SelectionList) -> None:
         if len(selection_list.options) == 0:
@@ -194,6 +215,7 @@ class WorklogScreen(Screen):
 
     @work(exclusive=True)
     @on(UpdateMonths)
+    @on(WorklogSaved)
     async def action_update_months(self) -> None:
         years_list = self._repository.get_years()
         months_list = self._repository.get_months(years_list)
@@ -207,7 +229,7 @@ class WorklogScreen(Screen):
             ]
         )
         self._months.highlighted = 0
-        self.post_message(self.UpdateDates())
+        self.post_message(UpdateDates())
 
     @work(exclusive=True)
     @on(UpdateWorklogs)
@@ -237,7 +259,7 @@ class WorklogScreen(Screen):
             ]
         )
         self.if_options_empty(self._tasks)
-        self.post_message(self.UpdateWorklogs())
+        self.post_message(UpdateWorklogs())
 
     @work(exclusive=True)
     @on(UpdateDates)
@@ -253,15 +275,17 @@ class WorklogScreen(Screen):
             ]
         )
         self.if_options_empty(self._dates)
-        self.post_message(self.UpdateTasks())
+        self.post_message(UpdateTasks())
 
     def action_create_new_worklog_screen(self) -> None:
         def new_worklog_result(result: WorklogDto | None) -> None:
             if result:
-                self._repository.save(
-                    WorklogEntity(None, result.date, result.task, result.duration)
-                )
-                self.post_message(self.UpdateMonths())
+                entity = WorklogEntity(None, result.date, result.task, result.duration)
+                entity = self._repository.save(entity)
+                for plugin in self._plugins:
+                    plugin.on_save(entity)
+
+                self.post_message(WorklogSaved())
 
         self.app.push_screen(NewWorklogScreen(), new_worklog_result)
 
@@ -275,7 +299,7 @@ class WorklogScreen(Screen):
                 self._repository.update(
                     WorklogEntity(result.id, result.date, result.task, result.duration)
                 )
-                self.post_message(self.UpdateWorklogs())
+                self.post_message(UpdateWorklogs())
 
         row_data = self._worklogs.get_row(message.row_key)
         self.app.push_screen(
@@ -293,26 +317,26 @@ class WorklogScreen(Screen):
             return
         if self.focused.id == self._tasks.id:
             self.choose_current(self._tasks)
-            self.post_message(self.UpdateWorklogs())
+            self.post_message(UpdateWorklogs())
         elif self.focused.id == self._dates.id:
             self.choose_current(self._dates)
-            self.post_message(self.UpdateTasks())
+            self.post_message(UpdateTasks())
         elif self.focused.id == self._months.id:
             self.choose_current(self._months)
-            self.post_message(self.UpdateDates())
+            self.post_message(UpdateDates())
 
     def action_choose_all(self) -> None:
         if self.focused is None:
             return
         if self.focused.id == self._tasks.id:
             self._tasks.select_all()
-            self.post_message(self.UpdateWorklogs())
+            self.post_message(UpdateWorklogs())
         elif self.focused.id == self._dates.id:
             self._dates.select_all()
-            self.post_message(self.UpdateTasks())
+            self.post_message(UpdateTasks())
         elif self.focused.id == self._months.id:
             self._months.select_all()
-            self.post_message(self.UpdateDates())
+            self.post_message(UpdateDates())
 
     def on_mount(self) -> None:
         self.action_refresh()
@@ -325,11 +349,11 @@ class WorklogScreen(Screen):
         print(f"event from id {id}")
 
         if MONTHS_VIEW == id:
-            self.post_message(self.UpdateDates())
+            self.post_message(UpdateDates())
         elif DATES_VIEW == id:
-            self.post_message(self.UpdateTasks())
+            self.post_message(UpdateTasks())
         elif TASK_VIEW == id:
-            self.post_message(self.UpdateWorklogs())
+            self.post_message(UpdateWorklogs())
 
     def choose_current(self, selection_list: SelectionList[str]):
         if selection_list.highlighted is None:

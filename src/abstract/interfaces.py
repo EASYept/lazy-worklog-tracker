@@ -38,11 +38,17 @@ class WorklogsRepository:
     ) -> Iterable[WorklogEntity]:
         return []
 
-    def save(self, entity: WorklogEntity) -> int:
-        return 0
+    def save(self, entity: WorklogEntity) -> WorklogEntity:
+        return entity
 
-    def update(self, entity: WorklogEntity) -> int:
-        return 0
+    def update(self, entity: WorklogEntity) -> WorklogEntity:
+        return entity
 
     def delete(self, id: int) -> int:
         return 0
+
+
+class Plugin:
+    @abstractmethod
+    def on_save(self, entity: WorklogEntity):
+        pass

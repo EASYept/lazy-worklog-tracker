@@ -64,10 +64,10 @@ class SqliteWorklogsRepository(WorklogsRepository):
     def save(self, entity: WorklogEntity) -> int:
         data = [(entity.date, entity.task, entity.duration)]
         self.cursor.execute(
-            "INSERT INTO Worklogs(date, task_name, duration) VALUES (?, ?, ?)",
+            "INSERT INTO Worklogs(date, task_name, duration) VALUES (?, ?, ?) RETURNING id",
             *data,
         )
-        return 0
+        return self.cursor.fetchone()[0]
 
     def update(self, entity: WorklogEntity) -> int:
         data = [(entity.date, entity.task, entity.duration, entity.id)]
