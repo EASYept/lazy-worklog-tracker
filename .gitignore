@@ -1,1 +1,10 @@
-**/__pycache__
+# Ignore Python bytecode directories
+__pycache__/
+
+# Other common Python ignores (optional)
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
