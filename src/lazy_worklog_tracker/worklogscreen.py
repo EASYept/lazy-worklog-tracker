@@ -161,17 +161,6 @@ class WorklogScreen(Screen):
         self._plugins: List[Plugin] = plugins
         super().__init__(name, id, classes)
 
-    @property
-    def value(self):
-        """The 'value' property."""
-        return self._plugins
-
-    @value.setter
-    def value(self, new_value):
-        if not isinstance(new_value, (int, float)):
-            raise ValueError("Value must be a number.")
-        self._value = new_value
-
     def compose(self) -> ComposeResult:
         with containers.HorizontalGroup():
             with containers.VerticalGroup(id="left-bar"):
@@ -193,6 +182,11 @@ class WorklogScreen(Screen):
                 # self._worklogs.show_header = False
                 self._worklogs.cursor_type = "row"
                 self._worklogs.add_columns(*["date", "task", "duration"])
+                print(self._plugins)
+                for plugin in self._plugins:
+                    print(plugin)
+                    for col_name in plugin.columns():
+                        self._worklogs.add_column(col_name)
                 yield self._worklogs
         yield Footer()
 

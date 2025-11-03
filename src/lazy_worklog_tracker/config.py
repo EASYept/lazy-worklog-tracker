@@ -17,14 +17,24 @@ def find_repository(plugins: List[Tuple[str, type]]) -> WorklogsRepository:
     raise Error
 
 
+def is_subclass_of_plugin(t: type):
+    if issubclass(t, Plugin) and not t == Plugin:
+        return True
+
+
 def filter_plugins(plugins: List[Tuple[str, type]]):
-    _plugins = filter(lambda x: isinstance(x, Plugin), plugins)
+    _plugins = filter(lambda x: is_subclass_of_plugin(x[1]), plugins)
     return list(_plugins)
+
+
+def create_plugins(plugins: List[Tuple[str, type]]) -> List[Plugin]:
+    m = map(lambda x: x[1](), plugins)
+    return list(m)
 
 
 class Container(DeclarativeContainer):
     plugins = providers.List(*load_plugins("src/plugins"))
     repo = providers.Singleton(find_repository, plugins)
-    extensions = providers.List(*filter_plugins(plugins()))
+    extensions = providers.List(*create_plugins(filter_plugins(plugins())))
 
-    app = providers.Singleton(WorklogTracker, repo)
+    app = providers.Singleton(WorklogTracker, repo, extensions)

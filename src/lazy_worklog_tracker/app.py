@@ -8,7 +8,8 @@ from lazy_worklog_tracker.worklogscreen import WorklogScreen
 
 
 class WorklogTracker(App):
-    def __init__(self, repository: WorklogsRepository, plugins=List[Plugin]):
+    def __init__(self, repository: WorklogsRepository, plugins: List[Plugin]):
+        print(plugins)
         self._screen = WorklogScreen(repository=repository, plugins=plugins)
         super().__init__()
 

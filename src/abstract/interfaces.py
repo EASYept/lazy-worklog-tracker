@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, List
 
 
 @dataclass
@@ -49,6 +49,10 @@ class WorklogsRepository:
 
 
 class Plugin:
+    @abstractmethod
+    def columns(self) -> List[str]:
+        return []
+
     @abstractmethod
     def on_save(self, entity: WorklogEntity):
         pass
